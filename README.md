@@ -1,1 +1,1 @@
-# top-300-wordle-test-1
+# Pharmdle

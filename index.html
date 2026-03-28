@@ -445,9 +445,9 @@
       <div class="hint-label">Drug Class</div>
       <div class="hint-value" id="hv-class">—</div>
     </div>
-    <div class="hint-card locked" id="hint-brand">
-      <div class="hint-label">Brand Name <span id="brand-lock" style="color:var(--muted);font-size:11px;">(after guess 3)</span></div>
-      <div class="hint-value" id="hv-brand">Locked</div>
+    <div class="hint-card locked" id="hint-other-name">
+      <div class="hint-label" id="other-name-label">Brand Name <span id="other-name-lock" style="color:var(--muted);font-size:11px;">(after guess 3)</span></div>
+      <div class="hint-value" id="hv-other-name">Locked</div>
     </div>
     <div class="hint-card locked" id="hint-controlled">
       <div class="hint-label">Controlled Substance</div>
@@ -458,6 +458,13 @@
       <div class="hint-value" id="hv-specific">Locked</div>
     </div>
   </div>
+
+  <div id="word-type-badge" style="
+    display:inline-flex;align-items:center;gap:6px;
+    background:var(--accent-light);border:1px solid var(--accent);
+    color:var(--accent);border-radius:20px;padding:5px 14px;
+    font-size:12px;font-family:'DM Mono',monospace;font-weight:500;letter-spacing:0.5px;
+  "></div>
 
   <div id="grid-container"></div>
 </main>
@@ -495,7 +502,7 @@
 <div class="modal-overlay hidden" id="modal-how">
   <div class="modal">
     <h2>How to Play</h2>
-    <p>Guess the generic drug name in 6 tries. Type letters and press Enter. Spaces are shown automatically — only guess letter characters.</p>
+    <p>Guess the drug name in 6 tries. Each round randomly asks for either the <strong>generic</strong> or <strong>brand</strong> name — check the badge at the top of the grid so you know which one to guess. Type letters and press Enter. Spaces are filled in automatically.</p>
     <div class="how-section">
       <h3>Tile Colors</h3>
       <div class="legend">
@@ -896,6 +903,7 @@ const DRUGS = [
 // ===================== GAME STATE =====================
 const MAX_GUESSES = 6;
 let currentMode = 'daily';
+let currentWordType = 'generic'; // set automatically each round
 let currentDrug = null;
 let currentGuess = '';
 let guesses = [];
@@ -903,11 +911,22 @@ let gameOver = false;
 let keyStates = {};
 let practiceIndex = 0;
 
+// Get the primary brand name (first one if comma-separated)
+function getPrimaryBrand(drug) {
+  return drug.brand.split(',')[0].trim();
+}
+
+// Get the current answer word based on word type
+function getAnswerWord() {
+  return currentWordType === 'brand' ? getPrimaryBrand(currentDrug) : currentDrug.generic;
+}
+
 // Daily drug seeded by date
 function getDailyDrug() {
   const now = new Date();
   const epoch = new Date(2025, 0, 1);
   const dayNum = Math.floor((now - epoch) / 86400000);
+  currentWordType = dayNum % 2 === 0 ? 'generic' : 'brand';
   return DRUGS[dayNum % DRUGS.length];
 }
 
@@ -949,15 +968,36 @@ function saveStats(won, numGuesses) {
 // ===================== INIT =====================
 function initGame() {
   if (currentMode === 'daily') {
-    currentDrug = getDailyDrug();
+    currentDrug = getDailyDrug(); // also sets currentWordType
   } else {
     currentDrug = DRUGS[practiceOrder[practiceIndex % practiceOrder.length]];
+    // Randomly assign generic or brand each practice round
+    currentWordType = Math.random() < 0.5 ? 'generic' : 'brand';
   }
 
   currentGuess = '';
   guesses = [];
   gameOver = false;
   keyStates = {};
+
+  // Update the badge
+  const badge = document.getElementById('word-type-badge');
+  if (currentWordType === 'brand') {
+    badge.innerHTML = '💊 Guess the <strong style="margin-left:4px;">Brand Name</strong>';
+  } else {
+    badge.innerHTML = '🔬 Guess the <strong style="margin-left:4px;">Generic Name</strong>';
+  }
+
+  // Reset locked hints
+  document.getElementById('hint-specific').classList.add('locked');
+  document.getElementById('hint-other-name').classList.add('locked');
+  document.getElementById('hint-controlled').classList.add('locked');
+
+  // Restore lock spans if removed
+  const specificLabel = document.querySelector('#hint-specific .hint-label');
+  if (!document.querySelector('#hint-specific .hint-label span')) {
+    specificLabel.innerHTML = 'Specific Class <span style="color:var(--muted);font-size:11px;">(after guess 2)</span>';
+  }
 
   buildGrid();
   buildKeyboard();
@@ -993,7 +1033,7 @@ function getLettersOnly(word) {
 function buildGrid() {
   const container = document.getElementById('grid-container');
   container.innerHTML = '';
-  const segments = getLetterSegments(currentDrug.generic);
+  const segments = getLetterSegments(getAnswerWord());
 
   for (let r = 0; r < MAX_GUESSES; r++) {
     const row = document.createElement('div');
@@ -1036,30 +1076,40 @@ function buildKeyboard() {
 
 // ===================== HINTS =====================
 function updateHints(numGuesses) {
-  // Drug class: always
-  // Controlled: always
-  // Specific class: after guess 2
-  // Brand: after guess 3
-
-  const specificLock = document.querySelector('#hint-specific .hint-label span');
-  const brandLock = document.getElementById('brand-lock');
+  const otherNameLock = document.getElementById('other-name-lock');
 
   if (numGuesses >= 2) {
     document.getElementById('hint-specific').classList.remove('locked');
+    const specificLock = document.querySelector('#hint-specific .hint-label span');
     if (specificLock) specificLock.remove();
   }
   if (numGuesses >= 3) {
-    document.getElementById('hint-brand').classList.remove('locked');
-    if (brandLock) brandLock.remove();
+    document.getElementById('hint-other-name').classList.remove('locked');
+    if (otherNameLock) otherNameLock.remove();
   }
 
   document.getElementById('hint-controlled').classList.remove('locked');
 }
 
 function updateHintValues() {
+  const isBrand = currentWordType === 'brand';
+
+  // Label for the "other name" hint flips depending on mode
+  const otherLabel = document.getElementById('other-name-label');
+  const lockSpan = document.getElementById('other-name-lock');
+  if (isBrand) {
+    otherLabel.innerHTML = 'Generic Name' + (lockSpan ? '' : '');
+    if (guesses.length < 3) otherLabel.innerHTML += ' <span id="other-name-lock" style="color:var(--muted);font-size:11px;">(after guess 3)</span>';
+  } else {
+    otherLabel.innerHTML = 'Brand Name';
+    if (guesses.length < 3) otherLabel.innerHTML += ' <span id="other-name-lock" style="color:var(--muted);font-size:11px;">(after guess 3)</span>';
+  }
+
   document.getElementById('hv-class').textContent = currentDrug.class;
   document.getElementById('hv-specific').textContent = guesses.length >= 2 ? currentDrug.specific : 'Locked';
-  document.getElementById('hv-brand').textContent = guesses.length >= 3 ? currentDrug.brand : 'Locked';
+  document.getElementById('hv-other-name').textContent = guesses.length >= 3
+    ? (isBrand ? currentDrug.generic : currentDrug.brand)
+    : 'Locked';
   document.getElementById('hv-controlled').textContent = currentDrug.controlled === 'No' ? 'Not Controlled' : currentDrug.controlled;
 }
 
@@ -1074,7 +1124,7 @@ document.addEventListener('keydown', e => {
 
 function handleKey(key) {
   if (gameOver) return;
-  const letters = getLettersOnly(currentDrug.generic);
+  const letters = getLettersOnly(getAnswerWord());
 
   if (key === '⌫') {
     if (currentGuess.length > 0) currentGuess = currentGuess.slice(0, -1);
@@ -1095,7 +1145,7 @@ function handleKey(key) {
 
 function renderCurrentGuess() {
   const rowNum = guesses.length;
-  const segments = getLetterSegments(currentDrug.generic);
+  const segments = getLetterSegments(getAnswerWord());
   let letterIdx = 0;
 
   segments.forEach((seg, i) => {
@@ -1110,19 +1160,25 @@ function renderCurrentGuess() {
 }
 
 function submitGuess() {
-  const letters = getLettersOnly(currentDrug.generic);
+  const letters = getLettersOnly(getAnswerWord());
   if (currentGuess.length < letters.length) {
     shakeTiles(guesses.length);
     showToast(`Need ${letters.length} letters`);
     return;
   }
 
-  const result = scoreGuess(currentGuess, letters);
-  animateTiles(guesses.length, result);
-  guesses.push(currentGuess);
-  updateKeyColors(currentGuess, letters, result);
+  const submittedGuess = currentGuess;
+  currentGuess = '';
+
+  const result = scoreGuess(submittedGuess, letters);
+  animateTiles(guesses.length, submittedGuess, result);
+  guesses.push(submittedGuess);
+  updateKeyColors(submittedGuess, letters, result);
   updateHints(guesses.length);
   updateHintValues();
+
+  // Clear the current row display
+  renderCurrentGuess();
 
   const won = result.every(r => r === 'correct');
   const lost = !won && guesses.length >= MAX_GUESSES;
@@ -1132,8 +1188,6 @@ function submitGuess() {
     if (currentMode === 'daily') saveStats(won, guesses.length);
     setTimeout(() => showResult(won), 1800);
   }
-
-  currentGuess = '';
 }
 
 // ===================== SCORING =====================
@@ -1157,8 +1211,8 @@ function scoreGuess(guess, answer) {
   return result;
 }
 
-function animateTiles(rowNum, result) {
-  const segments = getLetterSegments(currentDrug.generic);
+function animateTiles(rowNum, guess, result) {
+  const segments = getLetterSegments(getAnswerWord());
   let letterIdx = 0;
 
   segments.forEach((seg, i) => {
@@ -1166,17 +1220,18 @@ function animateTiles(rowNum, result) {
     const tile = document.getElementById(`tile-${rowNum}-${i}`);
     if (!tile) { letterIdx++; return; }
     const state = result[letterIdx];
-    const delay = letterIdx * 120;
+    const capturedIdx = letterIdx;
+    const delay = capturedIdx * 120;
     setTimeout(() => {
       tile.className = `tile ${state}`;
-      tile.textContent = (currentGuess[letterIdx] || '').toUpperCase();
+      tile.textContent = (guess[capturedIdx] || '').toUpperCase();
     }, delay);
     letterIdx++;
   });
 }
 
 function shakeTiles(rowNum) {
-  const segments = getLetterSegments(currentDrug.generic);
+  const segments = getLetterSegments(getAnswerWord());
   segments.forEach((seg, i) => {
     if (seg.type !== 'letter') return;
     const tile = document.getElementById(`tile-${rowNum}-${i}`);
@@ -1197,20 +1252,29 @@ function updateKeyColors(guess, answer, result) {
 
 // ===================== RESULT =====================
 function showResult(won) {
+  const isBrand = currentWordType === 'brand';
+  const answerWord = getAnswerWord();
+
   document.getElementById('result-title').textContent = won ? `🎉 Got it in ${guesses.length}!` : '😔 Better luck next time!';
   document.getElementById('result-subtitle').textContent = won
     ? guesses.length === 1 ? 'Perfect! Incredible!' : 'Great job!'
     : `The answer was:`;
-  document.getElementById('res-name').textContent = currentDrug.generic.toUpperCase();
-  document.getElementById('res-brand').textContent = currentDrug.brand;
+
+  // Show the answer word prominently, other name as subtitle
+  document.getElementById('res-name').textContent = answerWord.toUpperCase();
+  document.getElementById('res-brand').textContent = isBrand
+    ? `Generic: ${currentDrug.generic}`
+    : `Brand: ${currentDrug.brand}`;
+
   document.getElementById('res-class').textContent = currentDrug.class;
   document.getElementById('res-specific').textContent = currentDrug.specific;
   document.getElementById('res-controlled').textContent = currentDrug.controlled === 'No' ? 'Not Controlled' : currentDrug.controlled;
   document.getElementById('res-dose').textContent = currentDrug.dose;
 
   const emojiMap = { correct: '🟩', present: '🟨', absent: '⬜' };
-  const letters = getLettersOnly(currentDrug.generic);
-  let grid = `PHARMDLE ${currentMode === 'daily' ? '📅' : '🎯'} ${won ? guesses.length : 'X'}/${MAX_GUESSES}\n\n`;
+  const letters = getLettersOnly(answerWord);
+  const modeIcon = currentWordType === 'brand' ? '💊' : '🔬';
+  let grid = `PHARMDLE ${modeIcon}${currentMode === 'daily' ? '📅' : '🎯'} ${won ? guesses.length : 'X'}/${MAX_GUESSES}\n\n`;
   guesses.forEach(g => {
     const r = scoreGuess(g, letters);
     grid += r.map(s => emojiMap[s]).join('') + '\n';

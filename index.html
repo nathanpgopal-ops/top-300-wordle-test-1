@@ -1168,16 +1168,21 @@ function submitGuess() {
   }
 
   const submittedGuess = currentGuess;
+  const rowNum = guesses.length;
   currentGuess = '';
 
   const result = scoreGuess(submittedGuess, letters);
-  animateTiles(guesses.length, submittedGuess, result);
+
+  // Push first so guesses.length is correct for hint/key updates,
+  // but pass rowNum explicitly so animateTiles targets the right row
   guesses.push(submittedGuess);
+
+  animateTiles(rowNum, submittedGuess, result);
   updateKeyColors(submittedGuess, letters, result);
   updateHints(guesses.length);
   updateHintValues();
 
-  // Clear the current row display
+  // Clear the NEXT (upcoming) row's tiles
   renderCurrentGuess();
 
   const won = result.every(r => r === 'correct');
